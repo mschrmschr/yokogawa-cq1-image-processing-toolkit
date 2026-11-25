@@ -208,7 +208,7 @@ class App(ttk.Frame):
         )
         self.split_by_w_var = add_field(
             "Split by well within field (on: one stack per well, works with the "
-            "Wells checklist above; off: one stack per field, first well only)",
+            "Wells checklist above; off: one stack per field, fields with several wells are NOT written)",
             check_factory, "1", advanced=True,
         )
         self.split_by_w_var.trace_add("write", lambda *_: self._update_well_note())
@@ -292,7 +292,7 @@ class App(ttk.Frame):
     def _update_well_note(self) -> None:
         if self.split_by_w_var.get() != "1" and self.well_checklist.has_labels():
             self.well_checklist.set_note(
-                "Note: only the first well listed will be processed unless "
+                "Note: fields that hold more than one well will NOT be written unless "
                 "'Split by well within field' is enabled above."
             )
         else:

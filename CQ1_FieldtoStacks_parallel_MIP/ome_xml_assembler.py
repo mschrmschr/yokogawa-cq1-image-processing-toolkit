@@ -66,7 +66,8 @@ class JobConfig:
             from the first image read.
         split_by_w_within_field: If True, write one OME-TIFF per Well found
             within each field (``F####_W####.ome.tif``) instead of one per
-            field.
+            field. If False, a field that holds more than one well is NOT
+            written (a message says so).
         only_well: If set, restricts processing to this one Well number
             (matches the ``W####`` filename token, e.g. ``1`` for ``W0001``)
             -- only meaningful when wells are actually distinguished, i.e.
@@ -204,7 +205,9 @@ def _collect_tifs_for_channel(dir_path: str, ch_norm: str) -> List[str]:
         return []
     m = _C_TOKEN.search(ch_norm)
     ch_num = int(m.group(1)) if m else None
-    patt = re.compile(rf"(?i).*C0*{ch_num}(?:\.tif{1,2})?$")
+    # {{1,2}}: braces must be doubled inside the f-string, otherwise they become the text "(1, 2)"
+    # and no "...C1.tif" file matches.
+    patt = re.compile(rf"(?i).*C0*{ch_num}(?:\.tif{{1,2}})?$")
     files = [f for f in os.listdir(dir_path) if patt.match(f)]
     files.sort()
     return [os.path.join(dir_path, f) for f in files]
@@ -391,9 +394,22 @@ def assemble_one_job(cfg: JobConfig) -> List[str]:
         print(f"\n📦 Processing {label}")
 
         if not cfg.split_by_w_within_field:
+            # One stack per field is only allowed when the field folder holds ONE well:
+            # collecting by channel name alone would put the z-planes of several wells into one stack.
+            sub_index = _scan_flat_wfztc(field_dir)
+            present = sorted({w for wdict in sub_index.values() for w in wdict.keys()})
+            if len(present) > 1:
+                _refuse_multi_well(label, present)
+                continue
+            if present and not _well_requested(cfg, present[0]):
+                print(f"ℹ️ {label}: its well W{present[0]:04d} is not among the requested wells, skipping.")
+                continue
             collected_paths_per_channel: List[List[str]] = []
             for ch_norm in cfg_channels_norm:
-                paths = _collect_tifs_for_channel(field_dir, ch_norm)
+                if present:   # W/F/T/Z/C file names: take this field's planes, sorted by z number
+                    paths = [p for _z, p in sub_index.get(field, {}).get(present[0], {}).get(ch_norm, [])]
+                else:
+                    paths = _collect_tifs_for_channel(field_dir, ch_norm)
                 if not paths:
                     print(f"⚠️ Missing files for {ch_norm} in {label}, skipping this field.")
                     break
@@ -456,6 +472,9 @@ def _assemble_flat_wfztc(
 
     for fi, field in enumerate(fields, start=1):
         wells = sorted(index[field].keys())
+        if not cfg.split_by_w_within_field and len(wells) > 1:
+            _refuse_multi_well(f"F{field:04d}", wells)
+            continue
         if cfg.only_wells is not None:
             wanted = set(cfg.only_wells)
             wells = [w for w in wells if w in wanted]
@@ -464,11 +483,6 @@ def _assemble_flat_wfztc(
         if not wells:
             print(f"ℹ️ Field {field:04d}: no wells found, skipping.")
             continue
-
-        # If not splitting by W and multiple wells exist: pick smallest and warn (proceed anyway)
-        if not cfg.split_by_w_within_field and len(wells) > 1:
-            print(f"⚠️ Field {field:04d} has multiple wells {wells}, but split_by_w_within_field=False. "
-                  f"Proceeding with W{wells[0]:04d} only.")
 
         w_iter = wells if cfg.split_by_w_within_field else [wells[0]]
 
@@ -509,6 +523,20 @@ def _assemble_flat_wfztc(
 def _safe_image_name(image_names: List[str], field: int) -> str:
     """Return the OME-XML image name for 1-based `field`, or ``"Field{field:04d}"`` if out of range."""
     return image_names[field - 1] if 0 <= (field - 1) < len(image_names) else f"Field{field:04d}"
+
+
+def _refuse_multi_well(label: str, wells: List[int]) -> None:
+    """Split-by-well is OFF but this field holds several wells: write nothing for it and say why."""
+    print(f"❌ {label} holds {len(wells)} wells ({', '.join(f'W{w:04d}' for w in wells)}) and 'split by well within "
+          f"field' is OFF, so NO stack was written (one stack would mix or drop wells). Turn split by well ON "
+          f"(\"split_by_w_within_field\": true) and run again.")
+
+
+def _well_requested(cfg: "JobConfig", well: int) -> bool:
+    """True if `well` passes the only_wells / only_well filter."""
+    if cfg.only_wells is not None:
+        return well in set(cfg.only_wells)
+    return cfg.only_well is None or well == cfg.only_well
 
 
 def _resolve_assembly_workers(cfg: "JobConfig") -> int:

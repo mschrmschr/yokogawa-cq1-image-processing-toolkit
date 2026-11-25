@@ -131,8 +131,9 @@ overview image never gets relabeled by a later run's channel names.
 > Field → Stacks + MIP's Wells checklist only matters together with "Split
 > by well within field" turned on, under Advanced options → Assembly
 > options — that's what makes the tool tell wells apart in the first place.
-> It's on by default; turned off, only the first well found in each field is
-> ever processed, regardless of what's ticked.
+> It's on by default. Turned off, a field that holds more than one well is
+> not written at all (the log says so); only fields with a single well get a
+> stack.
 
 There's also an **Only grid index** field for the Stitching tool, under
 Advanced options — that's for when a single well itself contains more than
