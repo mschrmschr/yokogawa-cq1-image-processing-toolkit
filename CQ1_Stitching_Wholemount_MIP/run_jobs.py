@@ -42,7 +42,8 @@ def run_job(job: Dict[str, Any]) -> None:
     output_dir = _resolve(root, job.get("output_dir", "stitched_output"))
     os.makedirs(output_dir, exist_ok=True)
 
-    stitch_backend = str(job.get("stitch_backend", "seamless")).lower()
+    stitch_backend = str(job.get("stitch_backend", "measured")).lower()
+    blend_px = int(job.get("blend_px", 128))  # measured backend only
     placement = str(job.get("placement", "stage")).lower()
 
     only_well = job.get("only_well")
@@ -85,9 +86,10 @@ def run_job(job: Dict[str, Any]) -> None:
     print(f"META_CSV:       {meta_csv}")
     print(f"OUTPUT_DIR:     {output_dir}")
     print(f"STITCH_BACKEND: {stitch_backend}")
-    print(f"PLACEMENT:      {placement}")
+    print(f"PLACEMENT:      {'measured from the overlaps' if stitch_backend == 'measured' else placement}")
 
     blend_args = {
+        "blend_px": blend_px,
         "placement": placement,
         "compression": compression,
         "compression_level": compression_level,

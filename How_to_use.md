@@ -157,9 +157,28 @@ MIP\           MIP overview images (panel PNGs, one per stack)
 **Stitching + MIP** writes into your dataset folder by default:
 
 ```
-stitched_output\        one stitched OME-TIFF per (well, grid)
+stitched_output\        one stitched OME-TIFF per (well, grid), each with a
+                        ..._placement.json saying how its tiles were placed
 stitched_output\mip\    MIP overview panel PNGs, one per stitched file
 ```
+
+**How tiles are joined (Stitching).** The positions the microscope records are
+a few pixels off, so the tool measures where neighbouring tiles really overlap
+and places them from that. The log says how many joins were measured. A join
+with too little structure to measure gets the typical offset of the other
+joins. If not even that is possible, the whole grid is stitched the old way,
+from the microscope's positions, and the log says so (this happens mostly with
+single-channel data). Where two tiles overlap, the picture
+changes from one to the other over 128 pixels. Differences in brightness
+between tiles are softened there, not removed. Tile positions and the size of
+the stitched image differ from files made with earlier versions, so don't mix
+old and new stitched files in work that relies on pixel coordinates.
+
+Method and sources: tile overlaps are matched by normalised cross-correlation,
+computed with the fast method of J. P. Lewis
+(<https://scribblethink.org/Work/nvisionInterface/nip.html>). Details and the
+full list of sources are in the Stitching tool's `README.md` on GitHub,
+<https://github.com/mschrmschr/yokogawa-cq1-image-processing-toolkit/blob/main/CQ1_Stitching_Wholemount_MIP/README.md>.
 
 If a tile image listed in the dataset's metadata is missing, the Stitching
 tool writes **no** file for that (well, grid). The log marks it with ❌ and
@@ -179,6 +198,8 @@ understanding if you're tempted to change them:
 | Option | Tool(s) | Default | Notes |
 | --- | --- | --- | --- |
 | Generate MIP after stitching / assembly | Both | On | Turn off if you only want the full-resolution `.ome.tif` output and don't need the quick-look overview PNG — saves a bit of time. |
+| Tile placement | Stitching | measured | "measured" places tiles from their overlaps. "stage" uses only the recorded stage positions, the method of earlier versions; the feather and snap settings apply to it alone. |
+| Blend width px | Stitching | 128 | Measured placement only. Narrower keeps more fine detail but shows brightness steps between tiles more clearly; wider hides them better but softens detail in the overlap. |
 | TIFF compression | Stitching | zlib | Both zlib and zstd are lossless — no pixel data changes either way, only file size. Benchmarked on a real 1.62 GB stitched file: zlib ≈ 45% of the uncompressed size, zstd ≈ 40% (smaller, still opens fine in FIJI/Bio-Formats). "none" skips compression entirely — fastest write, largest file; only worth it if disk space genuinely isn't a concern. |
 | Compression level | Stitching | 6 (zlib) | Higher = smaller file, slower write. Pushing zlib past its default of 6 usually isn't worth it (level 9 only saved ~1.5% more in testing, for about 6x the write time). zstd's useful range is wider (0–22). |
 | Predictor | Stitching | Off | This checkbox has no effect on the output either way, checked or not — testing on real CQ1 fluorescence data showed enabling it makes files ~2.6% **larger**, not smaller (this kind of data is dominated by per-pixel sensor noise, not the smooth gradients this setting is designed to help with), so it's intentionally kept off internally regardless. |

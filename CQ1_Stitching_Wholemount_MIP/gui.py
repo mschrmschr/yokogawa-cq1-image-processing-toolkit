@@ -230,7 +230,20 @@ class App(ttk.Frame):
         self.bigtiff_var = add_field("BigTIFF", check_factory, "1", advanced=True)
         self.pyramids_var = add_field("Pyramids (not yet implemented, no-op)", check_factory, "0", advanced=True)
 
-        add_label("Seamless blending", bold=True, advanced=True)
+        add_label("Tile joins", bold=True, advanced=True)
+        self.placement_var = add_field(
+            "Tile placement (measured: from the image overlaps; stage: from the stage positions only, "
+            "the method of earlier versions)",
+            combo_factory(["measured", "stage"]), "measured", advanced=True,
+        )
+        self.blend_px_var = add_field(
+            "Blend width px (measured placement)", entry_factory, "128", advanced=True
+        )
+
+        add_label(
+            "Stage method (used for 'stage', and for a grid whose joins cannot be measured)",
+            bold=True, advanced=True,
+        )
         self.min_feather_px_var = add_field("Min feather px", entry_factory, "4", advanced=True)
         self.max_feather_px_var = add_field("Max feather px", entry_factory, "16", advanced=True)
         self.max_snap_px_var = add_field("Max snap px", entry_factory, "6", advanced=True)
@@ -380,12 +393,11 @@ class App(ttk.Frame):
             "xml_file": self.xml_file_var.get().strip() or "MeasurementResult.ome.xml",
             "image_dir": self.image_dir_var.get().strip() or "Image",
             "output_dir": self.output_dir_var.get().strip() or "stitched_output",
-            # Fixed rather than exposed as choices: "seamless" (feathered/
-            # blended overlaps) and "stage" (stage-coordinate tile
-            # placement) are what every job in this project's own
-            # jobs.json already uses.
-            "stitch_backend": "seamless",
+            # "measured" places tiles from their overlaps; "stage" is the
+            # earlier method (seamless backend on stage coordinates).
+            "stitch_backend": "seamless" if self.placement_var.get() == "stage" else "measured",
             "placement": "stage",
+            "blend_px": _parse_int(self.blend_px_var.get(), 128),
             "dry_run": self.dry_run_var.get() == "1",
             "generate_mip": self.generate_mip_var.get() == "1",
             "overlap_fraction": _parse_float(self.overlap_fraction_var.get(), 0.01),

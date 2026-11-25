@@ -34,7 +34,10 @@ launcher exe.
 - **Field → Stacks + MIP** turns each CQ1 field into one proper
   multi-channel image stack, then makes a quick-look overview image.
 - **Stitching + MIP** stitches CQ1 tiled wholemount scans into one big image
-  per well, then makes the same kind of overview image.
+  per well, placing the tiles by measuring where neighbouring images overlap,
+  then makes the same kind of overview image. How it works, its limits and the
+  [sources](CQ1_Stitching_Wholemount_MIP/README.md#sources-measured-placement)
+  are in the tool's README.
 
 Both point at the same kind of dataset folder — one containing CQ1's own
 `MeasurementResult.ome.xml` file and an `Image\` subfolder of raw images —
@@ -76,8 +79,9 @@ CQ1_Stitching_Wholemount_MIP/
   gui.py                      single-dataset GUI front end
   checklist_widget.py         shared Tk "Wells" checklist widget (byte-identical
                                copy in both tool projects, see repo layout note)
-  main.py                     routes to the stitcher backends (classic/seamless/tiny)
-  stitcher_unified.py         tile stitching backends (classic/seamless/tiny)
+  main.py                     routes to the stitcher backends (measured/classic/seamless/tiny)
+  tile_placement.py           "measured" backend (default): tile positions from the overlaps, blending
+  stitcher_unified.py         stage-position backends (classic/seamless/tiny)
   ome_metadata.py             CQ1 OME-XML -> per-tile metadata CSV
   mip_plotter.py               MIP panel PNG generation
   run_jobs.py                 batch/CLI entry point (jobs.json)

@@ -290,6 +290,16 @@ def _mosaic_extent(g: pd.DataFrame, tw: int, th: int, placement: str) -> Tuple[s
     return xcol, ycol, "stage", x_min, y_min, max_x, max_y
 
 
+def _extent_after_snap(g: pd.DataFrame, xcol: str, ycol: str, mode: str, x_min: int, y_min: int,
+                       tw: int, th: int) -> Tuple[int, int]:
+    """Mosaic (width, height) that holds every tile at the position it is actually pasted at. Lattice snapping moves
+    tiles after `_mosaic_extent` measured them, which cut a pixel row or column off an outer tile."""
+    off_x, off_y = (0, 0) if mode == "grid" else (x_min, y_min)
+    max_x = max(int(np.round(float(v) - off_x)) for v in g[xcol]) + tw
+    max_y = max(int(np.round(float(v) - off_y)) for v in g[ycol]) + th
+    return max_x, max_y
+
+
 # ---------------------------- classic -----------------------------------------
 
 def stitch_grid_classic(
@@ -444,6 +454,7 @@ def stitch_grid_seamless(
             g[xcol] = _lattice_snap(g[xcol].astype(float).values, step_x, lattice_snap_px)
         if snap_axis in ("both", "y"):
             g[ycol] = _lattice_snap(g[ycol].astype(float).values, step_y, lattice_snap_px)
+        max_x, max_y = _extent_after_snap(g, xcol, ycol, mode, x_min, y_min, tw, th)
 
     if verbose:
         print(f"[{well_id} G{grid_index}] placement={mode}")
@@ -590,6 +601,7 @@ def stitch_grid_tinyoverlap(
     if mode == "stage":
         g[xcol] = _lattice_snap(g[xcol].astype(float).values, step_x, max_snap_px)
         g[ycol] = _lattice_snap(g[ycol].astype(float).values, step_y, max_snap_px)
+        max_x, max_y = _extent_after_snap(g, xcol, ycol, mode, x_min, y_min, tw, th)
 
     z_slices = sorted(g["Z"].unique())
     channels = sorted(g["C"].unique())

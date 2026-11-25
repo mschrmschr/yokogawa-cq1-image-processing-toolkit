@@ -74,6 +74,7 @@ which any listed tile file is missing is not written; the log names the files.
 ```
 <root_dir>\stitched_output\
   W0001_A1_stitched.ome.tif        stitched wholemount, axes ZCYX
+  W0001_A1_stitched_placement.json how the tiles were placed (measured method)
   ...
   mip\
     W0001_A1_stitched_MIP_panel.png   colorized per-channel MIP panel, quick-look only
@@ -128,26 +129,82 @@ change here doesn't need to relearn this.
 
 ## Stitch backends (`stitch_backend` in `jobs.json`)
 
+- **`measured`** (default; "Tile placement: measured" in the GUI) — tile
+  positions are measured from the image overlaps, see below.
 - **`classic`** — straight tile paste, no blending. Fastest; visible seams if
   overlap/positioning isn't exact.
-- **`seamless`** (default) — feather-blends overlapping regions with a
+- **`seamless`** ("Tile placement: stage" in the GUI; the default of earlier
+  versions) — feather-blends overlapping regions with a
   raised-cosine taper; supports optional lattice snapping, local overlap-based
-  alignment refinement, and overlap gain-matching. Good general-purpose
-  default for typical CQ1 tile overlaps. The taper (here and in `tiny`) is
-  applied only where an earlier tile has already written pixels, so the outer
-  mosaic edge keeps the tiles' own values. (Before 2026-11-25 it faded to
-  black there, by up to the feather width.)
+  alignment refinement, and overlap gain-matching. The taper (here and in
+  `tiny`) is applied only where an earlier tile has already written pixels, so
+  the outer mosaic edge keeps the tiles' own values. (Before 2026-11-25 it
+  faded to black there, by up to the feather width.)
 - **`tiny`** — for datasets with near-zero (~0-1%) nominal tile overlap:
   snaps tile positions to the measured lattice and gain-matches each tile to
   the grid's median brightness before feather-blending a narrow seam.
 
-Tile placement itself always comes from the CQ1's own recorded stage/grid
-positions (`placement: "stage"` or `"grid"` in `jobs.json`) — none of the
-three backends does image-content-based registration (no phase correlation,
-no feature matching). `seamless`'s optional `refine_alignment` does a small
-local 1D cross-correlation nudge (up to `refine_max_shift_px`) purely to clean
-up sub-tile jitter within an already-known overlap region, not to solve
-registration from scratch.
+`classic`, `seamless` and `tiny` place tiles from the CQ1's recorded stage/grid
+positions (`placement: "stage"` or `"grid"` in `jobs.json`). On real
+acquisitions those leave neighbouring tiles several pixels apart, by an amount
+that differs from join to join.
+
+### Measured placement (`tile_placement.py`)
+
+1. For every pair of neighbouring tiles, the two facing edge strips (maximum
+   projection of up to 8 planes, local mean removed) are matched by normalised
+   cross-correlation, within +-60 px along the join (at most a third of the
+   overlap) and +-40 px across it. Every shift in that window is scored exactly
+   (Fourier transform for the sums of products, summed-area tables for the rest:
+   J. P. Lewis, "Fast Normalized Cross-Correlation"). Tiles are read 8 at a
+   time, which matters on network drives.
+2. A join counts as measured if at least 2 channels reach a correlation of 0.5
+   and all of those agree within 3 px. With a single channel it needs 0.8 and
+   agreement with another join of the same direction. Overlaps that leave less
+   than 32 px to compare are not measured.
+3. A join that is not measured gets the typical (median) offset of the measured
+   joins in the same direction. If there is none, so that a join would stay at
+   the stage position, **the whole grid is stitched with the stage method**
+   (`seamless`, narrow blend) instead; the log says so and the JSON records
+   `"method": "stage (fallback)"`. Single-channel datasets often end up here.
+4. Positions are solved from all joins together; each tile gets one position for
+   all planes and channels.
+5. Blending: every pixel is a raw value or a weighted mean of raw values. The
+   weight passes from one tile to the other in the middle of the overlap over
+   `blend_px` pixels (default 128, never more than the smallest overlap).
+   Brightness differences between tiles are spread over that width, **not**
+   corrected.
+
+Next to every stitched file, `<name>_placement.json` records each join (measured
+or not, offset, correlation per channel, leftover disagreement) and the final
+tile positions; the log summarises it. The feather, lattice-snap, refine and
+gain settings do not apply to this method (only to a grid that falls back).
+
+### Sources (measured placement)
+
+Used:
+
+- J. P. Lewis, "Fast Normalized Cross-Correlation" (Industrial Light & Magic),
+  <https://scribblethink.org/Work/nvisionInterface/nip.html>. The page lists
+  an earlier paper: J. P. Lewis, "Fast Template Matching", *Vision Interface*,
+  1995, pp. 120-123. Used for: sums of products by Fourier transform, window
+  sums and sums of squares from summed-area tables. Lewis describes a fixed
+  template searched in an image; here both overlap windows change with the
+  shift, so both images get summed-area tables.
+- F. C. Crow, "Summed-area tables for texture mapping", *Computer Graphics*
+  (SIGGRAPH '84) 18(3), 207-212, <https://doi.org/10.1145/800031.808600>. The
+  summed-area table.
+
+The accept rules, the least-squares tile positions and the blend weights are
+this project's own; their thresholds were set on its data and are listed above.
+
+Related, not used:
+
+- D. Padfield's masked normalised correlation in the Fourier domain (IEEE
+  Transactions on Image Processing, 2012), as implemented for example in
+  [ITK](https://docs.itk.org/projects/doxygen/en/stable/classitk_1_1MaskedFFTNormalizedCorrelationImageFilter.html).
+- [MIST](https://github.com/USNISTGOV/MIST/wiki) (NIST), a stitching tool that
+  uses phase correlation followed by normalised cross-correlation.
 
 ## Fixes applied vs. the source scripts
 

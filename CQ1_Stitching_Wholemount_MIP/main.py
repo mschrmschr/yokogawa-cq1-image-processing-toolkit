@@ -17,6 +17,7 @@ from stitcher_unified import (
     stitch_grid_seamless,
     stitch_grid_tinyoverlap,
 )
+from tile_placement import DEFAULT_BLEND_PX, stitch_grid_measured
 
 try:
     from ome_metadata import generate_metadata_csv
@@ -24,6 +25,7 @@ except Exception:
     generate_metadata_csv = None  # type: ignore
 
 _BACKENDS: Dict[str, Callable] = {
+    "measured": stitch_grid_measured,      # tile positions measured from the overlaps (default)
     "classic": stitch_grid_classic,
     "seamless": stitch_grid_seamless,
     "tiny": stitch_grid_tinyoverlap,
@@ -92,7 +94,7 @@ def _z_step_unknown(df: pd.DataFrame, well_id, grid_index) -> bool:
 def main(meta_csv: str, image_root: str, output_dir: str, *, blend_args: Optional[Dict] = None,
          only_well: Optional[str] = None, only_wells: Optional[List[str]] = None,
          only_grid: Optional[float] = None, dry_run: bool = False,
-         stitch_backend: str = "seamless", only_z: Optional[float] = None,
+         stitch_backend: str = "measured", only_z: Optional[float] = None,
          channel_names: Optional[List[str]] = None, verbose: bool = True) -> List[str]:
     if blend_args is None:
         blend_args = {}
@@ -100,6 +102,7 @@ def main(meta_csv: str, image_root: str, output_dir: str, *, blend_args: Optiona
     if verbose:
         print("CSV Columns:", list(df.columns))
     df = _apply_channel_names(df, channel_names, verbose=verbose)
+    all_planes = df  # measured placement uses every plane, so one-plane runs get the same tile positions
 
     if only_z is not None and "Z" in df.columns:
         df = df[df["Z"].astype(float) == float(only_z)]
@@ -148,11 +151,15 @@ def main(meta_csv: str, image_root: str, output_dir: str, *, blend_args: Optiona
             print(f"⚠️ WellID={well_id}, Grid={grid_index}: the metadata has no Z step. The file will say "
                   f"1.0 µm, which is a placeholder, not a measurement.")
 
+        sidecar = out_path[:-len(".ome.tif")] + "_placement.json"
+        if os.path.exists(sidecar):
+            os.remove(sidecar)  # it describes the file that is about to be overwritten
+
         print(f"\n=== Stitching WellID={well_id}, Grid={grid_index} to {out_path} ===")
         t0 = perf_counter()
         _dispatch(
             stitch_backend,
-            df=df, image_root=image_root, output_path=out_path,
+            df=df, image_root=image_root, output_path=out_path, placement_df=all_planes,
             well_id=well_id, grid_index=int(float(grid_index)),
             **blend_args, verbose=verbose,
         )
@@ -166,7 +173,7 @@ def main(meta_csv: str, image_root: str, output_dir: str, *, blend_args: Optiona
 def run_main(meta_csv: str, image_root: str, output_dir: str, *, blend_args: Optional[Dict] = None,
              only_well: Optional[str] = None, only_wells: Optional[List[str]] = None,
              only_grid: Optional[float] = None, dry_run: bool = False,
-             stitch_backend: str = "seamless", only_z: Optional[float] = None, xml_file: Optional[str] = None,
+             stitch_backend: str = "measured", only_z: Optional[float] = None, xml_file: Optional[str] = None,
              overlap_fraction: float = 0.01, channel_names: Optional[List[str]] = None,
              verbose: bool = True) -> List[str]:
     if not os.path.exists(meta_csv):
@@ -190,8 +197,11 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--output_dir", required=True)
     p.add_argument("--xml_file", default=None)
     p.add_argument("--overlap_fraction", type=float, default=0.01)
-    p.add_argument("--stitch_backend", choices=list(_BACKENDS), default="seamless")
-    p.add_argument("--placement", choices=["stage", "grid"], default="stage")
+    p.add_argument("--stitch_backend", choices=list(_BACKENDS), default="measured")
+    p.add_argument("--blend_px", type=int, default=DEFAULT_BLEND_PX,
+                   help="measured backend: width of the blend between two tiles, in pixels")
+    p.add_argument("--placement", choices=["stage", "grid"], default="stage",
+                   help="classic / seamless / tiny backends only")
 
     # writer/blend/gain knobs (unified; unused ones are filtered per-backend by _dispatch)
     p.add_argument("--compression", default="zlib")
@@ -233,6 +243,7 @@ def _parse_args() -> argparse.Namespace:
 def _cli():
     a = _parse_args()
     blend_args = {
+        "blend_px": int(a.blend_px),
         "placement": a.placement,
         "compression": a.compression,
         "compression_level": a.compression_level,
