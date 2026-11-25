@@ -44,10 +44,11 @@ def _reorder_to_ZCYX(arr: np.ndarray, axes: str) -> np.ndarray:
         else:
             dims.remove("T")
 
-    if "Z" not in dims:
-        arr = arr[np.newaxis, ...]
-        dims = ["Z"] + dims
-        shape = [1] + shape
+    for missing in ("C", "Z"):  # a single channel / plane has no axis of its own
+        if missing not in dims:
+            arr = arr[np.newaxis, ...]
+            dims = [missing] + dims
+            shape = [1] + shape
 
     for r in ("Z", "C", "Y", "X"):
         if r not in dims:
@@ -118,7 +119,7 @@ def _project_stack_streaming(
 
         if series.keyframe.samplesperpixel != 1:
             return None  # RGB/multi-sample - let the whole-array path handle it
-        if "Y" not in axes or "X" not in axes or "C" not in axes:
+        if "Y" not in axes or "X" not in axes:
             return None
         flat_axes = [a for a in axes if a not in ("Y", "X")]
         flat_shape = [shape[axes.index(a)] for a in flat_axes]
@@ -128,9 +129,9 @@ def _project_stack_streaming(
             return None  # matches _reorder_to_ZCYX's own restriction
 
         z_pos = flat_axes.index("Z") if "Z" in flat_axes else None
-        c_pos = flat_axes.index("C")
+        c_pos = flat_axes.index("C") if "C" in flat_axes else None  # absent for a single channel
         nz = flat_shape[z_pos] if z_pos is not None else 1
-        nc = flat_shape[c_pos]
+        nc = flat_shape[c_pos] if c_pos is not None else 1
         h, w = shape[axes.index("Y")], shape[axes.index("X")]
 
         z0, z1 = (None, None) if not z_range else (z_range[0], z_range[1])
@@ -150,7 +151,7 @@ def _project_stack_streaming(
             z = idx[z_pos] if z_pos is not None else 0
             if z < z0 or z >= z1:
                 continue
-            c = idx[c_pos]
+            c = idx[c_pos] if c_pos is not None else 0
             data = page.asarray()
             if projection == "max":
                 np.maximum(acc[c], data, out=acc[c])
@@ -305,6 +306,7 @@ def save_mip_panel(cyx: np.ndarray, ch_names: Sequence[str], out_path: str,
     C = cyx.shape[0]
     norm_colors = _normalize_colors(colors, C)
 
+    panel_cols = max(1, min(panel_cols, C))  # no empty columns when there are fewer channels
     rows = int(np.ceil(C / panel_cols))
     fig = plt.figure(figsize=(2.5 * panel_cols, 2.5 * rows))
     for i in range(C):

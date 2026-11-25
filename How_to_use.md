@@ -94,13 +94,16 @@ Rules that matter:
 - This name gets written into the output file's own metadata (so it shows
   up correctly if you reopen it in FIJI later), and it's also what appears
   as the label on each panel of the MIP overview image.
+- In the Stitching tool the box starts empty, and the names must all be
+  different.
 
 ## Picking which wells to process
 
 Right after you pick a dataset folder, both tools automatically read its
 wells straight from the metadata and show them as a **Wells** checklist,
 every box ticked by default — untick any wells you don't want included,
-then click Run and only the ticked wells are processed.
+then click Run and only the ticked wells are processed. If no well is
+ticked, nothing runs and a message asks you to tick one.
 
 If the automatic scan fails for some reason (you'll see a red message there
 instead of checkboxes — e.g. the dataset folder turned out not to have the
@@ -157,6 +160,11 @@ MIP\           MIP overview images (panel PNGs, one per stack)
 stitched_output\        one stitched OME-TIFF per (well, grid)
 stitched_output\mip\    MIP overview panel PNGs, one per stitched file
 ```
+
+If a tile image listed in the dataset's metadata is missing, the Stitching
+tool writes **no** file for that (well, grid). The log marks it with ❌ and
+names the missing files; the other grids are stitched as usual. A "Done" at
+the end therefore doesn't mean every grid was written — check the log.
 
 The stitched/stacked `.ome.tif` files are the real data — open those in FIJI
 (File → Import → Bio-Formats) for anything quantitative. The MIP panel PNGs

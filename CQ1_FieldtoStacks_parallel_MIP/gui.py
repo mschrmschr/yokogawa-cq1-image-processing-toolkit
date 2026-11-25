@@ -377,8 +377,9 @@ class App(ttk.Frame):
             job["only_well"] = only_well
         elif not self.well_checklist.all_checked():
             checked = self.well_checklist.get_checked()
-            if checked:
-                job["only_wells"] = [int(label.lstrip("W")) for label in checked]
+            if not checked:
+                raise ValueError("No wells are ticked. Tick at least one well in the Wells list.")
+            job["only_wells"] = [int(label.lstrip("W")) for label in checked]
 
         job["mip"] = {
             "projection": self.mip_projection_var.get(),

@@ -86,6 +86,12 @@ def _reorder_to_ZCYX(arr: np.ndarray, axes: str) -> np.ndarray:
         else:
             dims.remove("T")
 
+    for missing in ("C", "Z"):  # a single channel / plane has no axis of its own
+        if missing not in dims:
+            arr = arr[np.newaxis, ...]
+            dims = [missing] + dims
+            shape = [1] + shape
+
     for r in ("Z", "C", "Y", "X"):
         if r not in dims:
             raise ValueError(f"Missing '{r}' in axes={axes}, shape={shape}")
@@ -252,6 +258,7 @@ def plot_mip(cyx: np.ndarray,
     C = cyx.shape[0]
     norm_colors = _normalize_colors(colors, C)
 
+    panel_cols = max(1, min(panel_cols, C))  # no empty columns when there are fewer channels
     rows = int(np.ceil(C / panel_cols))
     fig = plt.figure(figsize=(2.5 * panel_cols, 2.5 * rows))
     for i in range(C):

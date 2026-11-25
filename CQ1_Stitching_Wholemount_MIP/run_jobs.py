@@ -147,7 +147,8 @@ def run_job(job: Dict[str, Any]) -> None:
         if include_keywords is None:
             wells_for_scope = only_wells if only_wells else ([only_well] if only_well else None)
             if wells_for_scope:
-                include_keywords = [str(w).replace("/", "_") for w in wells_for_scope]
+                # file names start "<well>_A<grid>"; the "_" keeps W1 from also matching W10
+                include_keywords = [str(w).replace("/", "_") + "_" for w in wells_for_scope]
 
         mip_job = {
             "stacks_dir": output_dir,

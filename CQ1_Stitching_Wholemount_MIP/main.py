@@ -12,6 +12,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 import pandas as pd
 
 from stitcher_unified import (
+    _resolve_tile_path,
     stitch_grid_classic,
     stitch_grid_seamless,
     stitch_grid_tinyoverlap,
@@ -70,6 +71,24 @@ def _apply_channel_names(df: pd.DataFrame, channel_names: Optional[List[str]], v
     return df
 
 
+def _missing_tiles(df: pd.DataFrame, image_root: str, well_id, grid_index) -> List[str]:
+    """Tile files listed in the metadata for this (well, grid) that are not on disk."""
+    g = df[(df["WellID"] == well_id) & (df["GridIndex"] == grid_index)]
+    paths = [_resolve_tile_path(f, image_root) for f in g["TiffFile"]]
+    return [p for p in paths if not os.path.isfile(p)]
+
+
+def _z_step_unknown(df: pd.DataFrame, well_id, grid_index) -> bool:
+    """True if this grid has several Z planes but no usable Z step in the metadata."""
+    g = df[(df["WellID"] == well_id) & (df["GridIndex"] == grid_index)]
+    if "Z" not in g.columns or g["Z"].nunique() < 2:
+        return False
+    if "PxSizeZ_um" not in g.columns:
+        return True
+    value = pd.to_numeric(g["PxSizeZ_um"], errors="coerce").iloc[0]
+    return not (pd.notna(value) and 0 < value < float("inf"))
+
+
 def main(meta_csv: str, image_root: str, output_dir: str, *, blend_args: Optional[Dict] = None,
          only_well: Optional[str] = None, only_wells: Optional[List[str]] = None,
          only_grid: Optional[float] = None, dry_run: bool = False,
@@ -102,6 +121,7 @@ def main(meta_csv: str, image_root: str, output_dir: str, *, blend_args: Optiona
         print(f"Will stitch {len(pairs)} grid(s) to {output_dir}")
 
     produced: List[str] = []
+    refused: List[str] = []
     for well_id, grid_index in pairs:
         safe_well = str(well_id).replace("/", "_")
         suffix = f"_Z{int(float(only_z))}" if only_z is not None else ""
@@ -110,6 +130,23 @@ def main(meta_csv: str, image_root: str, output_dir: str, *, blend_args: Optiona
         if dry_run:
             print(f"Would process: WellID={well_id}, Grid={grid_index} -> {out_path}")
             continue
+
+        missing = _missing_tiles(df, image_root, well_id, grid_index)
+        if missing:
+            # A mosaic with a hole would look like a finished result, so none is written.
+            print(f"\n❌ WellID={well_id}, Grid={grid_index}: {len(missing)} tile file(s) missing, "
+                  f"so NO stitched file was written for it:")
+            for path in missing[:10]:
+                print(f"     {path}")
+            if len(missing) > 10:
+                print(f"     ... and {len(missing) - 10} more")
+            if os.path.exists(out_path):
+                print(f"   An older file from an earlier run is still there, unchanged: {out_path}")
+            refused.append(f"{well_id} grid {grid_index}")
+            continue
+        if _z_step_unknown(df, well_id, grid_index):
+            print(f"⚠️ WellID={well_id}, Grid={grid_index}: the metadata has no Z step. The file will say "
+                  f"1.0 µm, which is a placeholder, not a measurement.")
 
         print(f"\n=== Stitching WellID={well_id}, Grid={grid_index} to {out_path} ===")
         t0 = perf_counter()
@@ -121,6 +158,8 @@ def main(meta_csv: str, image_root: str, output_dir: str, *, blend_args: Optiona
         )
         print(f"[{well_id} G{grid_index}] Total elapsed (incl. write): {perf_counter() - t0:.2f}s")
         produced.append(out_path)
+    if refused:
+        print(f"\n❌ NOT stitched because tile files are missing ({len(refused)}): {', '.join(refused)}")
     return produced
 
 

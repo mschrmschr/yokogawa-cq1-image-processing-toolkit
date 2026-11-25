@@ -66,7 +66,8 @@ too (via an auto-added `include_keywords` filter), so a later run's
    auto-discovers `jobs.json` next to the script).
 
 Each job stitches every `(WellID, GridIndex)` pair found in the metadata CSV,
-then writes a colorized MIP panel PNG for whatever it just wrote.
+then writes a colorized MIP panel PNG for whatever it just wrote. A pair for
+which any listed tile file is missing is not written; the log names the files.
 
 ### Output
 
@@ -132,7 +133,10 @@ change here doesn't need to relearn this.
 - **`seamless`** (default) — feather-blends overlapping regions with a
   raised-cosine taper; supports optional lattice snapping, local overlap-based
   alignment refinement, and overlap gain-matching. Good general-purpose
-  default for typical CQ1 tile overlaps.
+  default for typical CQ1 tile overlaps. The taper (here and in `tiny`) is
+  applied only where an earlier tile has already written pixels, so the outer
+  mosaic edge keeps the tiles' own values. (Before 2026-11-25 it faded to
+  black there, by up to the feather width.)
 - **`tiny`** — for datasets with near-zero (~0-1%) nominal tile overlap:
   snaps tile positions to the measured lattice and gain-matches each tile to
   the grid's median brightness before feather-blending a narrow seam.

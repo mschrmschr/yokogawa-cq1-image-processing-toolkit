@@ -71,7 +71,14 @@ def _feather_mask(h: int, w: int, tx: int, ty: int) -> np.ndarray:
     return mask
 
 
-def _blend_into(dest: np.ndarray, src: np.ndarray, x: int, y: int, tx: int, ty: int) -> None:
+def _blend_into(dest: np.ndarray, src: np.ndarray, x: int, y: int, tx: int, ty: int,
+                placed: List[Tuple[int, int, int, int]]) -> None:
+    """Feather `src` into `dest` at (x, y). `placed` lists the (x0, y0, x1, y1) rectangles that earlier tiles of
+    this plane already wrote; this tile's rectangle is appended to it.
+
+    The feather taper applies only where `dest` already holds tile data. Everywhere else the tile is copied at full
+    value: blending it against the empty (zero) background faded the outer mosaic edge, and joins without overlap,
+    towards black."""
     H, W = dest.shape
     h, w = src.shape
     x0 = max(int(x), 0)
@@ -83,6 +90,11 @@ def _blend_into(dest: np.ndarray, src: np.ndarray, x: int, y: int, tx: int, ty: 
     tw, th = (x1 - x0), (y1 - y0)
     src = src[:th, :tw].astype(np.float32)
     mask = _feather_mask(th, tw, tx, ty)
+    covered = np.zeros((th, tw), dtype=bool)
+    for px0, py0, px1, py1 in placed:
+        covered[max(py0 - y0, 0):max(py1 - y0, 0), max(px0 - x0, 0):max(px1 - x0, 0)] = True
+    mask[~covered] = 1.0
+    placed.append((x0, y0, x1, y1))
     region = dest[y0:y1, x0:x1].astype(np.float32)
     region = region * (1.0 - mask) + src * mask
     if np.issubdtype(dest.dtype, np.integer):
@@ -341,7 +353,8 @@ def stitch_grid_classic(
                 yield plane
 
     try:
-        ch_names = list(g.sort_values("C")["ChannelName"].unique())
+        # one name per channel index (two channels may carry the same name)
+        ch_names = [g.loc[g["C"] == c, "ChannelName"].iloc[0] for c in channels]
     except Exception:
         ch_names = [f"C{c}" for c in channels]
 
@@ -455,6 +468,7 @@ def stitch_grid_seamless(
             for c in channels:
                 zc = _order_df(g[(g["Z"] == z) & (g["C"] == c)].copy())
                 plane = np.zeros((max_y, max_x), dtype=dtype)
+                placed: List[Tuple[int, int, int, int]] = []
                 try:
                     ch_name = zc["ChannelName"].iloc[0]
                 except Exception:
@@ -503,13 +517,14 @@ def stitch_grid_seamless(
                             s = float(np.clip(float(np.median(scales)), gain_clip_low, gain_clip_high))
                             img = (img.astype(np.float32) * s).astype(img.dtype)
 
-                    _blend_into(plane, img, px + dx, py + dy, tx, ty)
+                    _blend_into(plane, img, px + dx, py + dy, tx, ty, placed)
 
                 progress.update(1)
                 yield plane
 
     try:
-        ch_names = list(g.sort_values("C")["ChannelName"].unique())
+        # one name per channel index (two channels may carry the same name)
+        ch_names = [g.loc[g["C"] == c, "ChannelName"].iloc[0] for c in channels]
     except Exception:
         ch_names = [f"C{c}" for c in channels]
 
@@ -605,17 +620,19 @@ def stitch_grid_tinyoverlap(
                     xs.append(px); ys.append(py)
 
                 target = float(np.median(meds)) if meds else 0.0
+                placed: List[Tuple[int, int, int, int]] = []
                 for med, pth, px, py in zip(meds, paths, xs, ys):
                     img = imread(pth)
                     gain = 1.0 if med == 0 else (target / float(med))
                     img_corr = (img.astype(np.float32) * float(gain)).astype(img.dtype)
-                    _blend_into(plane, img_corr, px, py, tx, ty)
+                    _blend_into(plane, img_corr, px, py, tx, ty, placed)
 
                 progress.update(1)
                 yield plane
 
     try:
-        ch_names = list(g.sort_values("C")["ChannelName"].unique())
+        # one name per channel index (two channels may carry the same name)
+        ch_names = [g.loc[g["C"] == c, "ChannelName"].iloc[0] for c in channels]
     except Exception:
         ch_names = [f"C{c}" for c in channels]
 

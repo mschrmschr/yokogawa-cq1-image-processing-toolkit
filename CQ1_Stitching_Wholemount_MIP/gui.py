@@ -164,12 +164,12 @@ class App(ttk.Frame):
 
         self.channel_names_var = add_field(
             "Channel names (comma-separated, one per channel, in acquisition order)",
-            entry_factory, "DAPI,GFP,RFP,FarRed",
+            entry_factory, "",
         )
         ttk.Label(
             form,
-            text="1st name = channel 1, 2nd name = channel 2, and so on, in the order "
-                 "channels were acquired. Applies to every checked well -- wells "
+            text="Required, e.g. DAPI,GFP,RFP. 1st name = channel 1, 2nd name = channel 2, "
+                 "and so on, in the order channels were acquired. Applies to every checked well -- wells "
                  "stained differently? Check just one staining group above, run, "
                  "then check the next group and run again.",
             foreground="#666666", wraplength=640,
@@ -371,6 +371,8 @@ class App(ttk.Frame):
         channel_names = _parse_csv(self.channel_names_var.get())
         if not channel_names:
             raise ValueError("Channel names are required.")
+        if len(set(channel_names)) != len(channel_names):
+            raise ValueError("Channel names must all be different.")
 
         compression = self.compression_var.get()
         job: dict = {
@@ -413,8 +415,9 @@ class App(ttk.Frame):
             job["only_well"] = only_well
         elif not self.well_checklist.all_checked():
             checked = self.well_checklist.get_checked()
-            if checked:
-                job["only_wells"] = checked
+            if not checked:
+                raise ValueError("No wells are ticked. Tick at least one well in the Wells list.")
+            job["only_wells"] = checked
         only_grid = self.only_grid_var.get().strip()
         if only_grid:
             job["only_grid"] = int(only_grid)
